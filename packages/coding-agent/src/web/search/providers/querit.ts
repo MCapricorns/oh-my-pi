@@ -5,6 +5,7 @@
  * SearchResponse shape.
  */
 import { type ApiKey, type AuthStorage, getEnvApiKey, withAuth } from "@oh-my-pi/pi-ai";
+import { asRecord } from "@oh-my-pi/pi-utils";
 import type { SearchResponse, SearchSource } from "../../../web/search/types";
 import { SearchProviderError } from "../../../web/search/types";
 import { clampNumResults, dateToAgeSeconds } from "../utils";
@@ -19,12 +20,6 @@ const MAX_NUM_RESULTS = 20;
 interface QueritSearchRequest {
 	query: string;
 	count: number;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: null;
 }
 
 function optionalString(value: unknown): string | undefined {
