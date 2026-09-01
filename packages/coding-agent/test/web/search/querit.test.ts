@@ -16,6 +16,20 @@ function makeAuthStorage(apiKey: string | undefined): AuthStorage {
 	} as unknown as AuthStorage;
 }
 
+function makeRotatingAuthStorage(keys: string[]): AuthStorage {
+	return {
+		resolver() {
+			return async ({ error, lastChance }: { error?: unknown; lastChance?: boolean }) => {
+				if (error === undefined || !lastChance) return keys[0];
+				return keys[1];
+			};
+		},
+		hasAuth() {
+			return keys.length > 0;
+		},
+	} as unknown as AuthStorage;
+}
+
 function makeParams(query: string, apiKey: string | null = TEST_API_KEY) {
 	return {
 		query,
@@ -125,7 +139,8 @@ describe("Querit web search provider", () => {
 		await expect(searchQuerit({ ...makeParams("quota"), fetch: fetchMock })).rejects.toMatchObject({
 			name: "SearchProviderError",
 			provider: "querit",
-			message: "Daily quota exceeded",
+			status: 429,
+			message: "querit: credits exhausted",
 		});
 	});
 
@@ -138,6 +153,50 @@ describe("Querit web search provider", () => {
 			status: 401,
 			message: "querit: 401 unauthorized",
 		});
+	});
+
+	it("rotates to a sibling credential after an HTTP 200 body 401", async () => {
+		const firstKey = "querit-key-a";
+		const secondKey = "querit-key-b";
+		const bearers: string[] = [];
+		const fetchMock: FetchImpl = async (_input, init) => {
+			const bearer = headerValue(init?.headers, "Authorization") ?? "";
+			bearers.push(bearer);
+			if (bearer === `Bearer ${firstKey}`) {
+				return new Response(JSON.stringify({ error_code: 401, error_msg: "invalid api key" }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+			return new Response(
+				JSON.stringify({
+					error_code: 200,
+					results: { result: [{ title: "Sibling hit", url: "https://example.com/ok" }] },
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+		};
+
+		const response = await searchQuerit({
+			query: "rotate",
+			authStorage: makeRotatingAuthStorage([firstKey, secondKey]),
+			systemPrompt: "Querit provider test prompt",
+			sessionId: "querit-test-session",
+			fetch: fetchMock,
+		});
+
+		expect(bearers).toEqual([`Bearer ${firstKey}`, `Bearer ${secondKey}`]);
+		expect(response.provider).toBe("querit");
+		expect(response.sources).toEqual([
+			{
+				title: "Sibling hit",
+				url: "https://example.com/ok",
+				snippet: undefined,
+				publishedDate: undefined,
+				ageSeconds: undefined,
+				author: undefined,
+			},
+		]);
 	});
 
 	it("rejects malformed result envelopes", async () => {

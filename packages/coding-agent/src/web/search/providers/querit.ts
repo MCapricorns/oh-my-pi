@@ -89,7 +89,10 @@ async function callQueritSearch(
 				? Number(rawErrorCode)
 				: undefined;
 	if (errorCode !== undefined && Number.isFinite(errorCode) && errorCode !== 200) {
-		throw new SearchProviderError("querit", optionalString(body.error_msg) ?? `Querit API error (${errorCode})`);
+		const message = optionalString(body.error_msg) ?? `Querit API error (${errorCode})`;
+		const classified = classifyProviderHttpError("querit", errorCode, message);
+		if (classified) throw classified;
+		throw new SearchProviderError("querit", message, errorCode);
 	}
 	return body;
 }
